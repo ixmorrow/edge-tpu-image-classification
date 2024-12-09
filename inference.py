@@ -181,67 +181,115 @@ class EdgeTPUInference:
 
         return results
 
-    def measure_performance_metrics(self, input_data):
-        """Measure detailed performance metrics for a single inference"""
-        metrics = {}
 
-        # Measure preprocessing time
-        preprocess_start = time.perf_counter()
-        processed_data = self.preprocess_image(input_data)
-        metrics["preprocess_time"] = time.perf_counter() - preprocess_start
+def plot_performance_metrics(results, output_dir="benchmark_plots"):
+    """Generate performance visualization plots"""
+    Path(output_dir).mkdir(exist_ok=True)
 
-        # Measure actual inference time
-        inference_start = time.perf_counter()
-        common.set_input(self.interpreter, processed_data)
-        invoke_start = time.perf_counter()
-        self.interpreter.invoke()
-        invoke_end = time.perf_counter()
-        results = classify.get_classes(self.interpreter, top_k=1)
-        inference_end = time.perf_counter()
+    # Compare warmup vs no warmup inference times
+    plt.figure(figsize=(12, 6))
+    plt.hist(
+        results["warmup"]["detailed_performance_metrics"]["inference_times"],
+        bins=30,
+        alpha=0.7,
+        label="With Warmup",
+    )
+    plt.hist(
+        results["no_warmup"]["detailed_performance_metrics"]["inference_times"],
+        bins=30,
+        alpha=0.7,
+        label="No Warmup",
+    )
+    plt.title("Inference Time Distribution")
+    plt.xlabel("Time (ms)")
+    plt.ylabel("Count")
+    plt.legend()
+    plt.savefig(f"{output_dir}/inference_time_distribution.png")
+    plt.close()
 
-        # Calculate different timing components
-        metrics["total_inference_time"] = inference_end - inference_start
-        metrics["invoke_time"] = invoke_end - invoke_start
-        metrics["overhead_time"] = (
-            metrics["total_inference_time"] - metrics["invoke_time"]
+    # Time components breakdown
+    plt.figure(figsize=(10, 6))
+    components = ["preprocessing_times", "invoke_times", "overhead_times"]
+    warm_means = [
+        np.mean(results["warmup"]["detailed_performance_metrics"][c])
+        for c in components
+    ]
+    no_warm_means = [
+        np.mean(results["no_warmup"]["detailed_performance_metrics"][c])
+        for c in components
+    ]
+
+    x = np.arange(len(components))
+    width = 0.35
+
+    plt.bar(x - width / 2, warm_means, width, label="With Warmup")
+    plt.bar(x + width / 2, no_warm_means, width, label="No Warmup")
+    plt.title("Average Time Components")
+    plt.ylabel("Time (ms)")
+    plt.xticks(x, ["Preprocessing", "Invoke", "Overhead"])
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(f"{output_dir}/time_components.png")
+    plt.close()
+
+    # Throughput stability over time
+    plt.figure(figsize=(12, 6))
+    warm_throughput = [
+        1000 / t
+        for t in results["warmup"]["detailed_performance_metrics"]["inference_times"]
+    ]
+    no_warm_throughput = [
+        1000 / t
+        for t in results["no_warmup"]["detailed_performance_metrics"]["inference_times"]
+    ]
+
+    plt.plot(warm_throughput, label="With Warmup", alpha=0.7)
+    plt.plot(no_warm_throughput, label="No Warmup", alpha=0.7)
+    plt.title("Throughput Stability Over Time")
+    plt.xlabel("Inference Number")
+    plt.ylabel("Throughput (FPS)")
+    plt.legend()
+    plt.savefig(f"{output_dir}/throughput_stability.png")
+    plt.close()
+
+    # Tail latency analysis
+    plt.figure(figsize=(12, 6))
+    percentiles = range(1, 101)
+    warm_percentiles = [
+        np.percentile(
+            results["warmup"]["detailed_performance_metrics"]["inference_times"], p
         )
-
-        return metrics, results[0]
-
-    def plot_performance_metrics(self, results, output_dir="benchmark_plots"):
-        """Generate enhanced performance visualizations"""
-        # Latency distribution
-        plt.figure(figsize=(12, 6))
-        plt.hist(
-            results["performance_metrics"]["inference_times"],
-            bins=30,
-            alpha=0.7,
-            label="Total Inference",
+        for p in percentiles
+    ]
+    no_warm_percentiles = [
+        np.percentile(
+            results["no_warmup"]["detailed_performance_metrics"]["inference_times"], p
         )
-        plt.hist(
-            results["performance_metrics"]["invoke_times"],
-            bins=30,
-            alpha=0.7,
-            label="TPU Invoke",
-        )
-        plt.title("Latency Distribution")
-        plt.xlabel("Time (seconds)")
-        plt.ylabel("Count")
-        plt.legend()
-        plt.savefig(f"{output_dir}/latency_distribution.png")
-        plt.close()
+        for p in percentiles
+    ]
 
-        # Time components breakdown
-        plt.figure(figsize=(10, 6))
-        components = ["preprocessing_times", "invoke_times", "overhead_times"]
-        means = [np.mean(results["performance_metrics"][c]) for c in components]
-        plt.bar(components, means)
-        plt.title("Average Time Components")
-        plt.ylabel("Time (seconds)")
-        plt.xticks(rotation=45)
-        plt.tight_layout()
-        plt.savefig(f"{output_dir}/time_components.png")
-        plt.close()
+    plt.plot(percentiles, warm_percentiles, label="With Warmup")
+    plt.plot(percentiles, no_warm_percentiles, label="No Warmup")
+    plt.title("Tail Latency Analysis")
+    plt.xlabel("Percentile")
+    plt.ylabel("Latency (ms)")
+    plt.axvline(x=95, color="r", linestyle="--", alpha=0.5, label="P95")
+    plt.axvline(x=99, color="g", linestyle="--", alpha=0.5, label="P99")
+    plt.legend()
+    plt.savefig(f"{output_dir}/tail_latency.png")
+    plt.close()
+
+    # Duty cycle comparison
+    plt.figure(figsize=(8, 6))
+    duty_cycles = [
+        results["warmup"]["detailed_performance_metrics"]["duty_cycle"],
+        results["no_warmup"]["detailed_performance_metrics"]["duty_cycle"],
+    ]
+    plt.bar(["With Warmup", "No Warmup"], duty_cycles)
+    plt.title("TPU Duty Cycle")
+    plt.ylabel("Duty Cycle (ratio)")
+    plt.savefig(f"{output_dir}/duty_cycle.png")
+    plt.close()
 
 
 def main():
@@ -338,6 +386,9 @@ def main():
             f,
             indent=4,
         )
+
+    # Generate plots
+    plot_performance_metrics({"warmup": warm_results, "no_warmup": no_warm_results})
 
     # Print summary
     print("\nBenchmark Results:")
