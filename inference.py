@@ -26,17 +26,6 @@ class EdgeTPUMonitor:
         except (FileNotFoundError, KeyError):
             return None
 
-    def read_power(self):
-        """Read power consumption"""
-        try:
-            with open(self.power_paths["voltage"], "r") as f:
-                voltage = float(f.read().strip()) / 1000.0  # Convert to V
-            with open(self.power_paths["current"], "r") as f:
-                current = float(f.read().strip()) / 1000.0  # Convert to A
-            return voltage * current  # Power in Watts
-        except FileNotFoundError:
-            return None
-
 
 class EdgeTPUInference:
     def __init__(self, model_path):
@@ -145,11 +134,6 @@ class EdgeTPUInference:
                     }
                 }
 
-            power = self.monitor.read_power()
-
-            if power:
-                results["monitoring"]["power"].append(float(power))
-
             # Run inference with detailed timing
             image_path = image_paths[i % len(image_paths)]
 
@@ -202,9 +186,7 @@ class EdgeTPUInference:
                     "overhead_time_ms": float(overhead_time * 1000),
                     "class_id": int(prediction.id),
                     "score": float(prediction.score),
-                    "temperature_cpu": temp_cpu,
-                    "temperature_tpu": temp_tpu,
-                    "power": power,
+                    "temperature_soc": temp_soc,
                 }
             )
 
@@ -245,43 +227,6 @@ class EdgeTPUInference:
                 np.max(np.abs(inference_times - np.mean(inference_times)))
             ),
         }
-
-        # Calculate thermal and power statistics
-        if results["monitoring"]["temperature"]["cpu"]:
-            results["thermal_stats"] = {
-                "cpu": {
-                    "avg_temp": float(
-                        np.mean(results["monitoring"]["temperature"]["cpu"])
-                    ),
-                    "max_temp": float(
-                        np.max(results["monitoring"]["temperature"]["cpu"])
-                    ),
-                    "temp_increase": float(
-                        results["monitoring"]["temperature"]["cpu"][-1] - start_temp_cpu
-                        if start_temp_cpu
-                        else 0
-                    ),
-                }
-            }
-        if results["monitoring"]["temperature"]["tpu"]:
-            results["thermal_stats"]["tpu"] = {
-                "avg_temp": float(np.mean(results["monitoring"]["temperature"]["tpu"])),
-                "max_temp": float(np.max(results["monitoring"]["temperature"]["tpu"])),
-                "temp_increase": float(
-                    results["monitoring"]["temperature"]["tpu"][-1] - start_temp_tpu
-                    if start_temp_tpu
-                    else 0
-                ),
-            }
-        if results["monitoring"]["power"]:
-            results["power_stats"] = {
-                "avg_power": float(np.mean(results["monitoring"]["power"])),
-                "max_power": float(np.max(results["monitoring"]["power"])),
-                "total_energy": float(
-                    np.sum(results["monitoring"]["power"])
-                    * (total_time / len(results["monitoring"]["power"]))
-                ),
-            }
 
         return results
 
