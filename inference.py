@@ -286,7 +286,7 @@ def plot_performance_metrics(results, output_dir="benchmark_plots"):
 
 def main():
     # Initialize inference benchmark
-    model_path = "models/quantized_model_edgetpu.tflite"
+    model_path = "models/tpu-optimized/tpu_optimized_quantized_model_edgetpu.tflite"
     benchmark = EdgeTPUInference(model_path)
 
     # Run benchmark w/o warmup
