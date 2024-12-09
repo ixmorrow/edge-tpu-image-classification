@@ -291,7 +291,7 @@ def main():
 
     # Run benchmark w/o warmup
     no_warm_results = benchmark.benchmark_inference(
-        test_image_dir="test_images", num_runs=500, warmup=False
+        test_image_dir="test_images", num_runs=1000, warmup=False
     )
 
     # Run benchmark w/ warmup
