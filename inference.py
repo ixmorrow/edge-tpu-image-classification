@@ -47,13 +47,17 @@ class EdgeTPUMonitor:
 
 class EdgeTPUInference:
     def __init__(self, model_path):
-        # Previous initialization code...
+        """Initialize Edge TPU interpreter with the quantized model"""
+        self.interpreter = edgetpu.make_interpreter(model_path)
+        self.interpreter.allocate_tensors()
+
+        # Get model details
+        self.input_details = self.interpreter.get_input_details()
+        self.output_details = self.interpreter.get_output_details()
+        self.input_shape = self.input_details[0]["shape"]
+
+        # Initialize monitoring
         self.monitor = EdgeTPUMonitor()
-        self.monitoring_data = {
-            "temperature": {"cpu": [], "tpu": []},
-            "power": [],
-            "timestamps": [],
-        }
 
     def preprocess_image(self, image_path):
         """Preprocess image for Edge TPU inference"""
@@ -61,13 +65,20 @@ class EdgeTPUInference:
             # Resize to match model's expected input shape
             img = img.resize((self.input_shape[1], self.input_shape[2]), Image.LANCZOS)
 
-            # Convert to numpy array and normalize
+            # Convert to numpy array
             input_data = np.asarray(img)
             input_data = input_data.astype("uint8")  # Edge TPU expects uint8
 
             return input_data
 
+    def run_inference(self, input_data):
+        """Run a single inference"""
+        common.set_input(self.interpreter, input_data)
+        self.interpreter.invoke()
+        return classify.get_classes(self.interpreter, top_k=1)[0]
+
     def benchmark_inference(self, test_image_dir, num_runs=100):
+        """Run inference benchmark with monitoring"""
         results = {
             "inference_times": [],
             "batch_results": [],
@@ -232,23 +243,26 @@ def main():
     # Run benchmark
     results = benchmark.benchmark_inference(test_image_dir="test_images", num_runs=500)
 
-    # Prepare results for JSON serialization
-    json_results = {
-        "summary": {
-            "average_inference_time_ms": float(results["avg_inference_time"]),
-            "inference_time_std_ms": float(results["std_inference_time"]),
-            "throughput_fps": float(results["throughput"]),
-        },
-        "detailed_results": results["batch_results"],
-    }
-
     # Save results
     Path("benchmark_results").mkdir(exist_ok=True)
     with open("benchmark_results/edge_tpu_inference.json", "w") as f:
-        json.dump(json_results, f, indent=4)
+        json.dump(
+            {
+                "summary": {
+                    "average_inference_time_ms": float(results["avg_inference_time"]),
+                    "inference_time_std_ms": float(results["std_inference_time"]),
+                    "throughput_fps": float(results["throughput"]),
+                    "thermal_stats": results.get("thermal_stats", {}),
+                    "power_stats": results.get("power_stats", {}),
+                },
+                "detailed_results": results["batch_results"],
+            },
+            f,
+            indent=4,
+        )
 
     # Plot results
-    benchmark.plot_benchmark_results(results)
+    benchmark.plot_monitoring_results(results)
 
     # Print summary
     print("\nBenchmark Results:")
@@ -256,6 +270,21 @@ def main():
     print(f"Average inference time: {results['avg_inference_time']:.2f} ms")
     print(f"Inference time std dev: {results['std_inference_time']:.2f} ms")
     print(f"Throughput: {results['throughput']:.2f} FPS")
+
+    if "thermal_stats" in results:
+        print("\nThermal Results:")
+        if "tpu" in results["thermal_stats"]:
+            print(
+                f"Max TPU Temperature: {results['thermal_stats']['tpu']['max_temp']:.1f}°C"
+            )
+            print(
+                f"TPU Temperature Increase: {results['thermal_stats']['tpu']['temp_increase']:.1f}°C"
+            )
+
+    if "power_stats" in results:
+        print("\nPower Results:")
+        print(f"Average Power: {results['power_stats']['avg_power']:.2f}W")
+        print(f"Total Energy: {results['power_stats']['total_energy']:.2f}Ws")
 
 
 if __name__ == "__main__":
