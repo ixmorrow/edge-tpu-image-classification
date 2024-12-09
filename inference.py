@@ -85,10 +85,6 @@ class EdgeTPUInference:
         start_time = time.time()
 
         for i in range(num_runs):
-            # Record monitoring data
-            current_time = time.time() - start_time
-            results["monitoring"]["timestamps"].append(float(current_time))
-
             # Run inference with detailed timing
             image_path = image_paths[i % len(image_paths)]
 
