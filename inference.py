@@ -189,13 +189,13 @@ def plot_performance_metrics(results, output_dir="benchmark_plots"):
     # Compare warmup vs no warmup inference times
     plt.figure(figsize=(12, 6))
     plt.hist(
-        results["warmup"]["detailed_performance_metrics"]["inference_times"],
+        results["warmup"]["performance_metrics"]["inference_times"],
         bins=30,
         alpha=0.7,
         label="With Warmup",
     )
     plt.hist(
-        results["no_warmup"]["detailed_performance_metrics"]["inference_times"],
+        results["no_warmup"]["performance_metrics"]["inference_times"],
         bins=30,
         alpha=0.7,
         label="No Warmup",
@@ -211,12 +211,10 @@ def plot_performance_metrics(results, output_dir="benchmark_plots"):
     plt.figure(figsize=(10, 6))
     components = ["preprocessing_times", "invoke_times", "overhead_times"]
     warm_means = [
-        np.mean(results["warmup"]["detailed_performance_metrics"][c])
-        for c in components
+        np.mean(results["warmup"]["performance_metrics"][c]) for c in components
     ]
     no_warm_means = [
-        np.mean(results["no_warmup"]["detailed_performance_metrics"][c])
-        for c in components
+        np.mean(results["no_warmup"]["performance_metrics"][c]) for c in components
     ]
 
     x = np.arange(len(components))
@@ -235,12 +233,10 @@ def plot_performance_metrics(results, output_dir="benchmark_plots"):
     # Throughput stability over time
     plt.figure(figsize=(12, 6))
     warm_throughput = [
-        1000 / t
-        for t in results["warmup"]["detailed_performance_metrics"]["inference_times"]
+        1000 / t for t in results["warmup"]["performance_metrics"]["inference_times"]
     ]
     no_warm_throughput = [
-        1000 / t
-        for t in results["no_warmup"]["detailed_performance_metrics"]["inference_times"]
+        1000 / t for t in results["no_warmup"]["performance_metrics"]["inference_times"]
     ]
 
     plt.plot(warm_throughput, label="With Warmup", alpha=0.7)
@@ -256,15 +252,11 @@ def plot_performance_metrics(results, output_dir="benchmark_plots"):
     plt.figure(figsize=(12, 6))
     percentiles = range(1, 101)
     warm_percentiles = [
-        np.percentile(
-            results["warmup"]["detailed_performance_metrics"]["inference_times"], p
-        )
+        np.percentile(results["warmup"]["performance_metrics"]["inference_times"], p)
         for p in percentiles
     ]
     no_warm_percentiles = [
-        np.percentile(
-            results["no_warmup"]["detailed_performance_metrics"]["inference_times"], p
-        )
+        np.percentile(results["no_warmup"]["performance_metrics"]["inference_times"], p)
         for p in percentiles
     ]
 
@@ -282,8 +274,8 @@ def plot_performance_metrics(results, output_dir="benchmark_plots"):
     # Duty cycle comparison
     plt.figure(figsize=(8, 6))
     duty_cycles = [
-        results["warmup"]["detailed_performance_metrics"]["duty_cycle"],
-        results["no_warmup"]["detailed_performance_metrics"]["duty_cycle"],
+        results["warmup"]["performance_metrics"]["duty_cycle"],
+        results["no_warmup"]["performance_metrics"]["duty_cycle"],
     ]
     plt.bar(["With Warmup", "No Warmup"], duty_cycles)
     plt.title("TPU Duty Cycle")
