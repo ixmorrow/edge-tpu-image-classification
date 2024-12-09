@@ -126,7 +126,7 @@ class EdgeTPUInference:
 
 def main():
     # Initialize inference benchmark
-    model_path = "quantized_model_edgetpu.tflite"
+    model_path = "models/quantized_model_edgetpu.tflite"
     benchmark = EdgeTPUInference(model_path)
 
     # Run benchmark
