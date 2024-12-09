@@ -263,22 +263,16 @@ def main():
                     "throughput_fps": float(results["throughput"]),
                 },
                 "detailed_performance_metrics": {
-                    "preprocess_times": float(
-                        results["performance_metrics"]["preprocessing_times"]
-                    ),
-                    "inference_times": float(
-                        results["performance_metrics"]["inference_times"]
-                    ),
-                    "invoke_times": float(
-                        results["performance_metrics"]["invoke_times"]
-                    ),
-                    "overhead_times": float(
-                        results["performance_metrics"]["overhead_times"]
-                    ),
-                    "tail_latencies": float(
-                        results["performance_metrics"]["tail_latencies"]
-                    ),
-                    "duty_cycle": float(results["performance_metrics"]["duty_cycle"]),
+                    "preprocess_times": results["performance_metrics"][
+                        "preprocessing_times"
+                    ],
+                    "inference_times": results["performance_metrics"][
+                        "inference_times"
+                    ],
+                    "invoke_times": results["performance_metrics"]["invoke_times"],
+                    "overhead_times": results["performance_metrics"]["overhead_times"],
+                    "tail_latencies": results["performance_metrics"]["tail_latencies"],
+                    "duty_cycle": results["performance_metrics"]["duty_cycle"],
                 },
                 "detailed_results": results["batch_results"],
             },
