@@ -55,6 +55,18 @@ class EdgeTPUInference:
             "timestamps": [],
         }
 
+    def preprocess_image(self, image_path):
+        """Preprocess image for Edge TPU inference"""
+        with Image.open(image_path) as img:
+            # Resize to match model's expected input shape
+            img = img.resize((self.input_shape[1], self.input_shape[2]), Image.LANCZOS)
+
+            # Convert to numpy array and normalize
+            input_data = np.asarray(img)
+            input_data = input_data.astype("uint8")  # Edge TPU expects uint8
+
+            return input_data
+
     def benchmark_inference(self, test_image_dir, num_runs=100):
         results = {
             "inference_times": [],
