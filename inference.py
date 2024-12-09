@@ -296,7 +296,7 @@ def main():
 
     # Run benchmark w/ warmup
     warm_results = benchmark.benchmark_inference(
-        test_image_dir="test_images", num_runs=500, warmup=True
+        test_image_dir="test_images", num_runs=1000, warmup=True
     )
 
     # Save results
@@ -387,12 +387,14 @@ def main():
     print("-" * 50)
     print("Model without Warmup:\n")
     print(f"Model Size: {no_warm_results['model_metrics']['model_size_mb']:.2f} mb")
+    print(f"First inference latency: {no_warm_results["inference_times"][0]:.2f} ms")
     print(f"Average inference time: {no_warm_results['avg_inference_time']:.2f} ms")
     print(f"Inference time std dev: {no_warm_results['std_inference_time']:.2f} ms")
     print(f"Throughput: {no_warm_results['throughput']:.2f} FPS")
 
     print("Warmed up model:\n")
     print(f"Model Size: {warm_results['model_metrics']['model_size_mb']:.2f} mb")
+    print(f"First inference latency: {warm_results["inference_times"][0]:.2f} ms")
     print(f"Average inference time: {warm_results['avg_inference_time']:.2f} ms")
     print(f"Inference time std dev: {warm_results['std_inference_time']:.2f} ms")
     print(f"Throughput: {warm_results['throughput']:.2f} FPS")
