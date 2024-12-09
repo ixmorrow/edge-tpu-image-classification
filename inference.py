@@ -16,8 +16,11 @@ class EdgeTPUInference:
         # Measure model loading time
         self.model_size = os.path.getsize(model_path) / (1024 * 1024)  # Size in MB
 
+        # Measure TPU model loading time
+        load_start = time.perf_counter()
         self.interpreter = edgetpu.make_interpreter(model_path)
         self.interpreter.allocate_tensors()
+        self.tpu_load_time = time.perf_counter() - load_start
 
         # Get model details
         self.input_details = self.interpreter.get_input_details()
