@@ -255,9 +255,28 @@ def main():
         json.dump(
             {
                 "summary": {
+                    "model_size_mb": float(results["model_metrics"]["model_size_mb"]),
                     "average_inference_time_ms": float(results["avg_inference_time"]),
                     "inference_time_std_ms": float(results["std_inference_time"]),
                     "throughput_fps": float(results["throughput"]),
+                },
+                "detailed_performance_metrics": {
+                    "preprocess_times": float(
+                        results["performance_metrics"]["preprocessing_times"]
+                    ),
+                    "inference_times": float(
+                        results["performance_metrics"]["inference_times"]
+                    ),
+                    "invoke_times": float(
+                        results["performance_metrics"]["invoke_times"]
+                    ),
+                    "overhead_times": float(
+                        results["performance_metrics"]["overhead_times"]
+                    ),
+                    "tail_latencies": float(
+                        results["performance_metrics"]["tail_latencies"]
+                    ),
+                    "duty_cycle": float(results["performance_metrics"]["duty_cycle"]),
                 },
                 "detailed_results": results["batch_results"],
             },
@@ -268,9 +287,11 @@ def main():
     # Print summary
     print("\nBenchmark Results:")
     print("-" * 50)
+    print(f"Model Size: {results['model_metrics']['model_size_mb']:.2f} mb")
     print(f"Average inference time: {results['avg_inference_time']:.2f} ms")
     print(f"Inference time std dev: {results['std_inference_time']:.2f} ms")
     print(f"Throughput: {results['throughput']:.2f} FPS")
+    print(f"Tail Latencies: {results["performance_metrics"]["tail_latencies"]}")
 
 
 if __name__ == "__main__":
