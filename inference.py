@@ -1,14 +1,6 @@
 from pycoral.utils import edgetpu
 from pycoral.adapters import common
 from pycoral.adapters import classify
-from PIL import Image
-import os
-import time
-
-
-from pycoral.utils import edgetpu
-from pycoral.adapters import common
-from pycoral.adapters import classify
 import time
 import numpy as np
 from PIL import Image
@@ -81,22 +73,24 @@ class EdgeTPUInference:
             prediction = self.run_inference(input_data)
             inference_time = time.perf_counter() - start_time
 
-            results["inference_times"].append(inference_time * 1000)  # Convert to ms
+            # Convert numpy types to Python native types
+            inference_time_ms = float(inference_time * 1000)
+            results["inference_times"].append(inference_time_ms)
             results["batch_results"].append(
                 {
                     "image": str(image_path),
-                    "inference_time_ms": inference_time * 1000,
-                    "class_id": prediction.id,
+                    "inference_time_ms": inference_time_ms,
+                    "class_id": int(prediction.id),  # Convert to native Python int
                     "score": float(prediction.score),
                 }
             )
 
             total_time += inference_time
 
-        # Calculate statistics
-        results["throughput"] = num_runs / total_time  # Images per second
-        results["avg_inference_time"] = np.mean(results["inference_times"])
-        results["std_inference_time"] = np.std(results["inference_times"])
+        # Calculate statistics and convert to native Python types
+        results["throughput"] = float(num_runs / total_time)
+        results["avg_inference_time"] = float(np.mean(results["inference_times"]))
+        results["std_inference_time"] = float(np.std(results["inference_times"]))
 
         return results
 
@@ -132,27 +126,26 @@ class EdgeTPUInference:
 
 def main():
     # Initialize inference benchmark
-    model_path = "models/quantized_model_edgetpu.tflite"
+    model_path = "quantized_model_edgetpu.tflite"
     benchmark = EdgeTPUInference(model_path)
 
     # Run benchmark
     results = benchmark.benchmark_inference(test_image_dir="test_images", num_runs=100)
 
+    # Prepare results for JSON serialization
+    json_results = {
+        "summary": {
+            "average_inference_time_ms": float(results["avg_inference_time"]),
+            "inference_time_std_ms": float(results["std_inference_time"]),
+            "throughput_fps": float(results["throughput"]),
+        },
+        "detailed_results": results["batch_results"],
+    }
+
     # Save results
     Path("benchmark_results").mkdir(exist_ok=True)
     with open("benchmark_results/edge_tpu_inference.json", "w") as f:
-        json.dump(
-            {
-                "summary": {
-                    "average_inference_time_ms": results["avg_inference_time"],
-                    "inference_time_std_ms": results["std_inference_time"],
-                    "throughput_fps": results["throughput"],
-                },
-                "detailed_results": results["batch_results"],
-            },
-            f,
-            indent=4,
-        )
+        json.dump(json_results, f, indent=4)
 
     # Plot results
     benchmark.plot_benchmark_results(results)
