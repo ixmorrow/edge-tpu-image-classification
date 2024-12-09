@@ -392,7 +392,7 @@ def main():
     print(f"Inference time std dev: {no_warm_results['std_inference_time']:.2f} ms")
     print(f"Throughput: {no_warm_results['throughput']:.2f} FPS")
 
-    print("Warmed up model:\n")
+    print("\nWarmed up model:")
     print(f"Model Size: {warm_results['model_metrics']['model_size_mb']:.2f} mb")
     print(f"First inference latency: {warm_results['inference_times'][0]:.2f} ms")
     print(f"Average inference time: {warm_results['avg_inference_time']:.2f} ms")
