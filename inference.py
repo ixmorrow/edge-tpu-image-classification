@@ -12,16 +12,9 @@ import matplotlib.pyplot as plt
 class EdgeTPUMonitor:
     def __init__(self):
         """Initialize paths for Edge TPU monitoring"""
-        # Thermal zones paths
+        # On this device, we only have thermal_zone0
         self.thermal_zones = {
-            "cpu": "/sys/class/thermal/thermal_zone0/temp",
-            "tpu": "/sys/class/thermal/thermal_zone1/temp",
-        }
-
-        # Power monitoring paths for Coral Dev Board
-        self.power_paths = {
-            "voltage": "/sys/bus/i2c/devices/0-0040/in1_input",
-            "current": "/sys/bus/i2c/devices/0-0040/curr1_input",
+            "soc": "/sys/class/thermal/thermal_zone0/temp",  # This represents the system-on-chip temperature
         }
 
     def read_thermal(self, zone):
@@ -106,9 +99,9 @@ class EdgeTPUInference:
             raise ValueError(f"No jpg images found in {test_image_dir}")
 
         # Initial monitoring reading
-        start_temp_cpu = self.monitor.read_thermal("cpu")
-        start_temp_tpu = self.monitor.read_thermal("tpu")
-        start_power = self.monitor.read_power()
+        start_temp_soc = self.monitor.read_thermal(
+            "soc"
+        )  # Changed from start_temp_cpu/tpu
 
         # Warm up
         print("Warming up...")
@@ -127,14 +120,33 @@ class EdgeTPUInference:
             current_time = time.time() - start_time
             results["monitoring"]["timestamps"].append(float(current_time))
 
-            temp_cpu = self.monitor.read_thermal("cpu")
-            temp_tpu = self.monitor.read_thermal("tpu")
+            # In benchmark_inference method, replace the temperature monitoring part with:
+            temp_soc = self.monitor.read_thermal("soc")
+            if temp_soc:
+                results["monitoring"]["temperature"]["soc"] = []
+                results["monitoring"]["temperature"]["soc"].append(float(temp_soc))
+
+            # And update the thermal stats calculation:
+            if results["monitoring"]["temperature"]["soc"]:
+                results["thermal_stats"] = {
+                    "soc": {
+                        "avg_temp": float(
+                            np.mean(results["monitoring"]["temperature"]["soc"])
+                        ),
+                        "max_temp": float(
+                            np.max(results["monitoring"]["temperature"]["soc"])
+                        ),
+                        "temp_increase": float(
+                            results["monitoring"]["temperature"]["soc"][-1]
+                            - start_temp_soc
+                            if start_temp_soc
+                            else 0
+                        ),
+                    }
+                }
+
             power = self.monitor.read_power()
 
-            if temp_cpu:
-                results["monitoring"]["temperature"]["cpu"].append(float(temp_cpu))
-            if temp_tpu:
-                results["monitoring"]["temperature"]["tpu"].append(float(temp_tpu))
             if power:
                 results["monitoring"]["power"].append(float(power))
 
