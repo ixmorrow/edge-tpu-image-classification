@@ -287,7 +287,6 @@ def main():
     print(f"Average inference time: {results['avg_inference_time']:.2f} ms")
     print(f"Inference time std dev: {results['std_inference_time']:.2f} ms")
     print(f"Throughput: {results['throughput']:.2f} FPS")
-    print(f"Tail Latencies: {results['performance_metrics']['tail_latencies']:.2f}")
 
 
 if __name__ == "__main__":
