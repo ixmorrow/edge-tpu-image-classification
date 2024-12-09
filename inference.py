@@ -6,56 +6,163 @@ import os
 import time
 
 
-def test_inference(interpreter, image_path):
-    """Run a single inference and return results"""
-    # Open and resize image
-    img = Image.open(image_path)
-    img = img.resize((224, 224), Image.LANCZOS)
+from pycoral.utils import edgetpu
+from pycoral.adapters import common
+from pycoral.adapters import classify
+import time
+import numpy as np
+from PIL import Image
+import json
+from pathlib import Path
+import matplotlib.pyplot as plt
 
-    # Convert to numpy array
-    input_data = img
 
-    # Time the inference
-    start = time.perf_counter()
+class EdgeTPUInference:
+    def __init__(self, model_path):
+        """Initialize Edge TPU interpreter with the quantized model"""
+        self.interpreter = edgetpu.make_interpreter(model_path)
+        self.interpreter.allocate_tensors()
 
-    # Run inference
-    common.set_input(interpreter, input_data)
-    interpreter.invoke()
-    classes = classify.get_classes(interpreter, top_k=1)
+        # Get model details
+        self.input_details = self.interpreter.get_input_details()
+        self.output_details = self.interpreter.get_output_details()
+        self.input_shape = self.input_details[0]["shape"]
 
-    inference_time = (time.perf_counter() - start) * 1000  # ms
+    def preprocess_image(self, image_path):
+        """Preprocess image for Edge TPU inference"""
+        with Image.open(image_path) as img:
+            # Resize and center crop
+            img = img.resize((self.input_shape[1], self.input_shape[2]), Image.LANCZOS)
 
-    return classes[0].id, classes[0].score, inference_time
+            # Convert to numpy array and normalize
+            input_data = np.asarray(img)
+            input_data = input_data.astype("uint8")  # Edge TPU expects uint8
+
+            return input_data
+
+    def run_inference(self, input_data):
+        """Run a single inference"""
+        common.set_input(self.interpreter, input_data)
+        self.interpreter.invoke()
+        return classify.get_classes(self.interpreter, top_k=1)[0]
+
+    def benchmark_inference(self, test_image_dir, num_runs=100):
+        """Run inference benchmark"""
+        results = {
+            "inference_times": [],
+            "batch_results": [],
+            "throughput": 0,
+            "avg_inference_time": 0,
+            "std_inference_time": 0,
+        }
+
+        # Get list of test images
+        image_paths = list(Path(test_image_dir).glob("*.jpg"))
+        if not image_paths:
+            raise ValueError(f"No jpg images found in {test_image_dir}")
+
+        # Warm up
+        print("Warming up...")
+        warmup_image = self.preprocess_image(str(image_paths[0]))
+        for _ in range(10):
+            self.run_inference(warmup_image)
+
+        # Run benchmark
+        print(f"Running benchmark with {num_runs} iterations...")
+        total_time = 0
+
+        for i in range(num_runs):
+            # Cycle through available images
+            image_path = image_paths[i % len(image_paths)]
+            input_data = self.preprocess_image(str(image_path))
+
+            # Time inference
+            start_time = time.perf_counter()
+            prediction = self.run_inference(input_data)
+            inference_time = time.perf_counter() - start_time
+
+            results["inference_times"].append(inference_time * 1000)  # Convert to ms
+            results["batch_results"].append(
+                {
+                    "image": str(image_path),
+                    "inference_time_ms": inference_time * 1000,
+                    "class_id": prediction.id,
+                    "score": float(prediction.score),
+                }
+            )
+
+            total_time += inference_time
+
+        # Calculate statistics
+        results["throughput"] = num_runs / total_time  # Images per second
+        results["avg_inference_time"] = np.mean(results["inference_times"])
+        results["std_inference_time"] = np.std(results["inference_times"])
+
+        return results
+
+    def plot_benchmark_results(self, results, output_dir="benchmark_plots"):
+        """Generate visualizations of benchmark results"""
+        Path(output_dir).mkdir(exist_ok=True)
+
+        # Inference time distribution
+        plt.figure(figsize=(10, 6))
+        plt.hist(results["inference_times"], bins=30)
+        plt.title("Inference Time Distribution")
+        plt.xlabel("Inference Time (ms)")
+        plt.ylabel("Count")
+        plt.savefig(f"{output_dir}/inference_time_distribution.png")
+        plt.close()
+
+        # Inference times over runs
+        plt.figure(figsize=(12, 6))
+        plt.plot(results["inference_times"])
+        plt.title("Inference Times Over Runs")
+        plt.xlabel("Run Number")
+        plt.ylabel("Inference Time (ms)")
+        plt.axhline(
+            y=results["avg_inference_time"],
+            color="r",
+            linestyle="--",
+            label=f'Average ({results["avg_inference_time"]:.2f}ms)',
+        )
+        plt.legend()
+        plt.savefig(f"{output_dir}/inference_times_sequence.png")
+        plt.close()
 
 
 def main():
-    # Load model
-    MODEL_PATH = "models/quantized_model_edgetpu.tflite"
-    TEST_DIR = "test_images"  # Directory containing your test images
+    # Initialize inference benchmark
+    model_path = "models/quantized_model_edgetpu.tflite"
+    benchmark = EdgeTPUInference(model_path)
 
-    interpreter = edgetpu.make_interpreter(MODEL_PATH)
-    interpreter.allocate_tensors()
+    # Run benchmark
+    results = benchmark.benchmark_inference(test_image_dir="test_images", num_runs=100)
 
-    # Test each image in the directory
-    print("Image | Class ID | Confidence | Time (ms)")
-    print("-" * 40)
+    # Save results
+    Path("benchmark_results").mkdir(exist_ok=True)
+    with open("benchmark_results/edge_tpu_inference.json", "w") as f:
+        json.dump(
+            {
+                "summary": {
+                    "average_inference_time_ms": results["avg_inference_time"],
+                    "inference_time_std_ms": results["std_inference_time"],
+                    "throughput_fps": results["throughput"],
+                },
+                "detailed_results": results["batch_results"],
+            },
+            f,
+            indent=4,
+        )
 
-    total_time = 0
-    count = 0
+    # Plot results
+    benchmark.plot_benchmark_results(results)
 
-    for image_name in os.listdir(TEST_DIR):
-        if image_name.endswith((".jpg", ".jpeg", ".png")):
-            image_path = os.path.join(TEST_DIR, image_name)
-            class_id, score, inf_time = test_inference(interpreter, image_path)
-
-            print(f"{image_name} | {class_id} | {score:.2f} | {inf_time:.2f}")
-
-            total_time += inf_time
-            count += 1
-
-    if count > 0:
-        avg_time = total_time / count
-        print(f"\nAverage inference time: {avg_time:.2f} ms")
+    # Print summary
+    print("\nBenchmark Results:")
+    print("-" * 50)
+    print(f"Average inference time: {results['avg_inference_time']:.2f} ms")
+    print(f"Inference time std dev: {results['std_inference_time']:.2f} ms")
+    print(f"Throughput: {results['throughput']:.2f} FPS")
 
 
 if __name__ == "__main__":
