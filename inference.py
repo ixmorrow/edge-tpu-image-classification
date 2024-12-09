@@ -77,8 +77,8 @@ class EdgeTPUInference:
         self.interpreter.invoke()
         return classify.get_classes(self.interpreter, top_k=1)[0]
 
-    def benchmark_inference(self, test_image_dir, num_runs=100):
-        """Run inference benchmark with monitoring"""
+    def benchmark_inference(self, test_image_dir, num_runs=500):
+        """Run comprehensive inference benchmark with detailed performance metrics"""
         results = {
             "inference_times": [],
             "batch_results": [],
@@ -86,6 +86,14 @@ class EdgeTPUInference:
                 "temperature": {"cpu": [], "tpu": []},
                 "power": [],
                 "timestamps": [],
+            },
+            "performance_metrics": {
+                "preprocessing_times": [],
+                "inference_times": [],
+                "invoke_times": [],
+                "overhead_times": [],
+                "tail_latencies": {},
+                "duty_cycle": 0.0,
             },
             "throughput": 0,
             "avg_inference_time": 0,
@@ -111,6 +119,7 @@ class EdgeTPUInference:
         # Run benchmark
         print(f"Running benchmark with {num_runs} iterations...")
         total_time = 0
+        total_active_time = 0
         start_time = time.time()
 
         for i in range(num_runs):
@@ -129,19 +138,56 @@ class EdgeTPUInference:
             if power:
                 results["monitoring"]["power"].append(float(power))
 
-            # Run inference
+            # Run inference with detailed timing
             image_path = image_paths[i % len(image_paths)]
+
+            # Measure preprocessing time
+            preprocess_start = time.perf_counter()
             input_data = self.preprocess_image(str(image_path))
+            preprocess_time = time.perf_counter() - preprocess_start
 
+            # Measure inference components
             inference_start = time.perf_counter()
-            prediction = self.run_inference(input_data)
-            inference_time = time.perf_counter() - inference_start
+            common.set_input(self.interpreter, input_data)
+            invoke_start = time.perf_counter()
+            self.interpreter.invoke()
+            invoke_end = time.perf_counter()
+            prediction = classify.get_classes(self.interpreter, top_k=1)[0]
+            inference_end = time.perf_counter()
 
-            results["inference_times"].append(float(inference_time * 1000))
+            # Calculate timing metrics
+            invoke_time = invoke_end - invoke_start
+            total_inference_time = inference_end - inference_start
+            overhead_time = total_inference_time - invoke_time
+
+            # Record all timing metrics
+            results["inference_times"].append(
+                float(total_inference_time * 1000)
+            )  # Convert to ms
+            results["performance_metrics"]["preprocessing_times"].append(
+                float(preprocess_time * 1000)
+            )
+            results["performance_metrics"]["inference_times"].append(
+                float(total_inference_time * 1000)
+            )
+            results["performance_metrics"]["invoke_times"].append(
+                float(invoke_time * 1000)
+            )
+            results["performance_metrics"]["overhead_times"].append(
+                float(overhead_time * 1000)
+            )
+
+            total_time += total_inference_time
+            total_active_time += invoke_time
+
+            # Record detailed results
             results["batch_results"].append(
                 {
                     "image": str(image_path),
-                    "inference_time_ms": float(inference_time * 1000),
+                    "inference_time_ms": float(total_inference_time * 1000),
+                    "preprocessing_time_ms": float(preprocess_time * 1000),
+                    "invoke_time_ms": float(invoke_time * 1000),
+                    "overhead_time_ms": float(overhead_time * 1000),
                     "class_id": int(prediction.id),
                     "score": float(prediction.score),
                     "temperature_cpu": temp_cpu,
@@ -150,12 +196,43 @@ class EdgeTPUInference:
                 }
             )
 
-            total_time += inference_time
-
-        # Calculate statistics
+        # Calculate basic statistics
         results["throughput"] = float(num_runs / total_time)
         results["avg_inference_time"] = float(np.mean(results["inference_times"]))
         results["std_inference_time"] = float(np.std(results["inference_times"]))
+
+        # Calculate detailed performance statistics
+        for metric_name in [
+            "preprocessing_times",
+            "inference_times",
+            "invoke_times",
+            "overhead_times",
+        ]:
+            times = results["performance_metrics"][metric_name]
+            results["performance_metrics"][f"{metric_name}_stats"] = {
+                "mean": float(np.mean(times)),
+                "std": float(np.std(times)),
+                "min": float(np.min(times)),
+                "max": float(np.max(times)),
+                "p95": float(np.percentile(times, 95)),
+                "p99": float(np.percentile(times, 99)),
+            }
+
+        # Calculate duty cycle
+        results["performance_metrics"]["duty_cycle"] = float(
+            total_active_time / total_time
+        )
+
+        # Calculate throughput stability
+        inference_times = results["performance_metrics"]["inference_times"]
+        results["performance_metrics"]["throughput_stability"] = {
+            "coefficient_of_variation": float(
+                np.std(inference_times) / np.mean(inference_times)
+            ),
+            "max_deviation": float(
+                np.max(np.abs(inference_times - np.mean(inference_times)))
+            ),
+        }
 
         # Calculate thermal and power statistics
         if results["monitoring"]["temperature"]["cpu"]:
@@ -191,10 +268,37 @@ class EdgeTPUInference:
                 "total_energy": float(
                     np.sum(results["monitoring"]["power"])
                     * (total_time / len(results["monitoring"]["power"]))
-                ),  # Watt-seconds
+                ),
             }
 
         return results
+
+    def measure_performance_metrics(self, input_data):
+        """Measure detailed performance metrics for a single inference"""
+        metrics = {}
+
+        # Measure preprocessing time
+        preprocess_start = time.perf_counter()
+        processed_data = self.preprocess_image(input_data)
+        metrics["preprocess_time"] = time.perf_counter() - preprocess_start
+
+        # Measure actual inference time
+        inference_start = time.perf_counter()
+        common.set_input(self.interpreter, processed_data)
+        invoke_start = time.perf_counter()
+        self.interpreter.invoke()
+        invoke_end = time.perf_counter()
+        results = classify.get_classes(self.interpreter, top_k=1)
+        inference_end = time.perf_counter()
+
+        # Calculate different timing components
+        metrics["total_inference_time"] = inference_end - inference_start
+        metrics["invoke_time"] = invoke_end - invoke_start
+        metrics["overhead_time"] = (
+            metrics["total_inference_time"] - metrics["invoke_time"]
+        )
+
+        return metrics, results[0]
 
     def plot_monitoring_results(self, results, output_dir="benchmark_plots"):
         """Plot thermal and power monitoring results"""
@@ -233,6 +337,41 @@ class EdgeTPUInference:
             plt.ylabel("Power (Watts)")
             plt.savefig(f"{output_dir}/power_over_time.png")
             plt.close()
+
+    def plot_performance_metrics(self, results, output_dir="benchmark_plots"):
+        """Generate enhanced performance visualizations"""
+        # Latency distribution
+        plt.figure(figsize=(12, 6))
+        plt.hist(
+            results["performance_metrics"]["inference_times"],
+            bins=30,
+            alpha=0.7,
+            label="Total Inference",
+        )
+        plt.hist(
+            results["performance_metrics"]["invoke_times"],
+            bins=30,
+            alpha=0.7,
+            label="TPU Invoke",
+        )
+        plt.title("Latency Distribution")
+        plt.xlabel("Time (seconds)")
+        plt.ylabel("Count")
+        plt.legend()
+        plt.savefig(f"{output_dir}/latency_distribution.png")
+        plt.close()
+
+        # Time components breakdown
+        plt.figure(figsize=(10, 6))
+        components = ["preprocessing_times", "invoke_times", "overhead_times"]
+        means = [np.mean(results["performance_metrics"][c]) for c in components]
+        plt.bar(components, means)
+        plt.title("Average Time Components")
+        plt.ylabel("Time (seconds)")
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.savefig(f"{output_dir}/time_components.png")
+        plt.close()
 
 
 def main():
