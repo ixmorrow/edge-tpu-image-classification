@@ -45,9 +45,10 @@ class EdgeTPUInference:
         self.interpreter.invoke()
         return classify.get_classes(self.interpreter, top_k=1)[0]
 
-    def benchmark_inference(self, test_image_dir, num_runs=500):
+    def benchmark_inference(self, test_image_dir, num_runs=500, warmup=True):
         """Run comprehensive inference benchmark with detailed performance metrics"""
         results = {
+            "warmup": warmup,
             "model_metrics": {
                 "model_size_mb": self.model_size,
                 "tpu_load_time": self.tpu_load_time,
@@ -72,17 +73,17 @@ class EdgeTPUInference:
         if not image_paths:
             raise ValueError(f"No jpg images found in {test_image_dir}")
 
-        # Warm up
-        print("Warming up...")
-        warmup_image = self.preprocess_image(str(image_paths[0]))
-        for _ in range(10):
-            self.run_inference(warmup_image)
+        if warmup:
+            # Warm up
+            print("Warming up...")
+            warmup_image = self.preprocess_image(str(image_paths[0]))
+            for _ in range(10):
+                self.run_inference(warmup_image)
 
         # Run benchmark
         print(f"Running benchmark with {num_runs} iterations...")
         total_time = 0
         total_active_time = 0
-        start_time = time.time()
 
         for i in range(num_runs):
             # Run inference with detailed timing
@@ -248,33 +249,91 @@ def main():
     model_path = "models/quantized_model_edgetpu.tflite"
     benchmark = EdgeTPUInference(model_path)
 
-    # Run benchmark
-    results = benchmark.benchmark_inference(test_image_dir="test_images", num_runs=500)
+    # Run benchmark w/o warmup
+    no_warm_results = benchmark.benchmark_inference(
+        test_image_dir="test_images", num_runs=500, warmup=False
+    )
+
+    # Run benchmark w/ warmup
+    warm_results = benchmark.benchmark_inference(
+        test_image_dir="test_images", num_runs=500, warmup=True
+    )
 
     # Save results
     Path("benchmark_results").mkdir(exist_ok=True)
     with open("benchmark_results/edge_tpu_inference.json", "w") as f:
         json.dump(
             {
-                "summary": {
-                    "model_size_mb": float(results["model_metrics"]["model_size_mb"]),
-                    "average_inference_time_ms": float(results["avg_inference_time"]),
-                    "inference_time_std_ms": float(results["std_inference_time"]),
-                    "throughput_fps": float(results["throughput"]),
+                "warmup": {
+                    "summary": {
+                        "warmup": warm_results["warmup"],
+                        "model_size_mb": float(
+                            warm_results["model_metrics"]["model_size_mb"]
+                        ),
+                        "average_inference_time_ms": float(
+                            warm_results["avg_inference_time"]
+                        ),
+                        "inference_time_std_ms": float(
+                            warm_results["std_inference_time"]
+                        ),
+                        "throughput_fps": float(warm_results["throughput"]),
+                    },
+                    "detailed_performance_metrics": {
+                        "preprocess_times": warm_results["performance_metrics"][
+                            "preprocessing_times"
+                        ],
+                        "inference_times": warm_results["performance_metrics"][
+                            "inference_times"
+                        ],
+                        "invoke_times": warm_results["performance_metrics"][
+                            "invoke_times"
+                        ],
+                        "overhead_times": warm_results["performance_metrics"][
+                            "overhead_times"
+                        ],
+                        "tail_latencies": warm_results["performance_metrics"][
+                            "tail_latencies"
+                        ],
+                        "duty_cycle": warm_results["performance_metrics"]["duty_cycle"],
+                    },
+                    "detailed_results": warm_results["batch_results"],
                 },
-                "detailed_performance_metrics": {
-                    "preprocess_times": results["performance_metrics"][
-                        "preprocessing_times"
-                    ],
-                    "inference_times": results["performance_metrics"][
-                        "inference_times"
-                    ],
-                    "invoke_times": results["performance_metrics"]["invoke_times"],
-                    "overhead_times": results["performance_metrics"]["overhead_times"],
-                    "tail_latencies": results["performance_metrics"]["tail_latencies"],
-                    "duty_cycle": results["performance_metrics"]["duty_cycle"],
+                "no_warmup": {
+                    "summary": {
+                        "warmup": no_warm_results["warmup"],
+                        "model_size_mb": float(
+                            no_warm_results["model_metrics"]["model_size_mb"]
+                        ),
+                        "average_inference_time_ms": float(
+                            no_warm_results["avg_inference_time"]
+                        ),
+                        "inference_time_std_ms": float(
+                            no_warm_results["std_inference_time"]
+                        ),
+                        "throughput_fps": float(no_warm_results["throughput"]),
+                    },
+                    "detailed_performance_metrics": {
+                        "preprocess_times": no_warm_results["performance_metrics"][
+                            "preprocessing_times"
+                        ],
+                        "inference_times": no_warm_results["performance_metrics"][
+                            "inference_times"
+                        ],
+                        "invoke_times": no_warm_results["performance_metrics"][
+                            "invoke_times"
+                        ],
+                        "overhead_times": no_warm_results["performance_metrics"][
+                            "overhead_times"
+                        ],
+                        "tail_latencies": no_warm_results["performance_metrics"][
+                            "tail_latencies"
+                        ],
+                        "duty_cycle": no_warm_results["performance_metrics"][
+                            "duty_cycle"
+                        ],
+                    },
+                    "detailed_results": no_warm_results["batch_results"],
                 },
-                "detailed_results": results["batch_results"],
             },
             f,
             indent=4,
@@ -283,10 +342,17 @@ def main():
     # Print summary
     print("\nBenchmark Results:")
     print("-" * 50)
-    print(f"Model Size: {results['model_metrics']['model_size_mb']:.2f} mb")
-    print(f"Average inference time: {results['avg_inference_time']:.2f} ms")
-    print(f"Inference time std dev: {results['std_inference_time']:.2f} ms")
-    print(f"Throughput: {results['throughput']:.2f} FPS")
+    print("Model without Warmup:\n")
+    print(f"Model Size: {no_warm_results['model_metrics']['model_size_mb']:.2f} mb")
+    print(f"Average inference time: {no_warm_results['avg_inference_time']:.2f} ms")
+    print(f"Inference time std dev: {no_warm_results['std_inference_time']:.2f} ms")
+    print(f"Throughput: {no_warm_results['throughput']:.2f} FPS")
+
+    print("Warmed up model:\n")
+    print(f"Model Size: {warm_results['model_metrics']['model_size_mb']:.2f} mb")
+    print(f"Average inference time: {warm_results['avg_inference_time']:.2f} ms")
+    print(f"Inference time std dev: {warm_results['std_inference_time']:.2f} ms")
+    print(f"Throughput: {warm_results['throughput']:.2f} FPS")
 
 
 if __name__ == "__main__":
