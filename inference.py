@@ -393,7 +393,14 @@ def main():
         test_image_dir="test_images", num_runs=1000, warmup=True
     )
 
-    print("Evaluating model on test set...")
+    print("Evaluating Baseline model on test set...")
+    test_results = evaluate_model_on_test_set(
+        "models/baseline/quantized_model_edgetpu.tflite",
+        "test_dataset",
+        "test_dataset/labels.txt",
+    )
+
+    print("Evaluating TPU Optimized model on test set...")
     test_results = evaluate_model_on_test_set(
         model_path, "test_dataset", "test_dataset/labels.txt"
     )
